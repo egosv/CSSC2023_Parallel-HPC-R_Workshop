@@ -1,0 +1,1452 @@
+---
+title: "A primer to parallel and high-performance computing in R"
+subtitle: ""  
+author: "Osvaldo Espin-Garcia"
+date: |
+  <center> Canadian Statistics Student Conference </center>
+  <center> May 27, 2023 </center>
+output:
+  xaringan::moon_reader:
+    css: xaringan-themer.css
+    self_contained: true
+    nature:
+      slideNumberFormat: "%current%"
+      highlightStyle: github
+      highlightLines: true
+      ratio: 14:9
+      countIncrementalSlides: false
+      navigation:
+        scroll: false # false if wish to disable scrolling by mouse and use keyboard only
+---
+
+```{r setup, include=FALSE}
+# For dynamic editing xaringan::inf_mr()
+# Stop: servr::daemon_stop(2)
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(
+  fig.width=9, fig.height=6, fig.retina=3,
+  fig.retina = 3, fig.align = 'center',
+  #out.height = "100%",
+  cache = FALSE,
+  echo = TRUE,
+  message = FALSE, 
+  warning = FALSE,
+  hiline = TRUE
+)
+```
+
+```{r wrap-hook, include=FALSE}
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = xfun::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
+```
+
+```{r xaringan-themer, include=FALSE, warning=FALSE}
+library(xaringanthemer)
+background_css <- list(
+  ".small" = list(
+    "font-size" = "60%"
+  )
+)
+style_duo_accent(
+  extra_css = background_css,
+  primary_color = "#4F2683",
+  text_bold_color = "#807F83",
+  secondary_color = "#807F83",
+  inverse_header_color = "#807F83",
+  title_slide_background_color = "#FFFFFF",
+  title_slide_text_color = "#4F2683",
+  base_font_size = "18px",
+  text_font_size = "1.4rem",
+)
+```
+
+```{css, echo=FALSE}
+/* custom.css following https://www.garrickadenbuie.com/blog/decouple-code-and-output-in-xaringan-slides/#using-knitr-fig-chunk 
+https://gist.github.com/gadenbuie/3869b688f5e50882e67b684a1e092937 */
+.left-code {
+  width: 38%;
+  height: 92%;
+  float: left;
+}
+.right-plot {
+  width: 60%;
+  float: right;
+  padding-left: 1%;
+}
+
+.left-code1 {
+  width: 62%;
+  height: 90%;
+  float: left;
+}
+.right-plot1 {
+  width: 37%;
+  float: right;
+  padding-left: 1%;
+}
+
+.plot-callout {
+  height: 225px;
+  width: 450px;
+  bottom: 5%;
+  right: 5%;
+  position: absolute;
+  padding: 0px;
+  z-index: 100;
+}
+.plot-callout img {
+  width: 100%;
+  border: 4px solid #23373B;
+}
+```
+
+# Workshop material
+
+<p style="margin-bottom:4.0cm"></p>
+
+Go to [https://github.com/egosv/CSSC2023_Parallel-HPC-R_Workshop](https://github.com/oespinga2/opt-par-R) for today's material  
+
+<p style="margin-bottom:1.0cm"></p>
+
+(Or just Google "GitHub + egosv" and click on the corresponding repository)
+
+---
+
+# Packages needed today
+
+<p style="margin-bottom:2.5cm"></p>
+
+```{r packs, eval=FALSE}
+## general utilities
+install.packages('gtools')
+
+## parallel computation
+install.packages(c('doParallel', 'snow', 'doSNOW', 'foreach', 'iterators'))
+
+## Monte Carlo simulation example
+install.packages(c('irtoys', 'mirt'))
+
+```
+
+---
+
+# Learning objectives
+
+<p style="margin-bottom:2cm"></p>
+
+1. Identify the advantages and challenges of parallel computing in R.
+<p style="margin-bottom:1cm"></p>
+
+2. Learn about relevant R packages for parallel computing.
+<p style="margin-bottom:1cm"></p>
+
+3. Describe the scope, utility and capabilities of HPC systems.
+<p style="margin-bottom:1cm"></p>
+
+4. Summarize relevant topics on HPC: 
+<p style="margin-bottom:-0.5cm"></p>
+
+    - job scheduling and monitoring 
+    - software and libraries usage 
+    - efficient data creation and management
+
+--
+
+---
+
+# Background
+
+<p style="margin-bottom:2.5cm"></p>
+
+- Current (May, 2022) high-performance and parallel computing with R packages: 93 ([R task view ](https://CRAN.R-project.org/view=HighPerformanceComputing)).
+  <p style="margin-bottom:1.2cm"></p>
+  
+- Most recent computers come equipped with a fair amount of processing power, e.g., Apple M2 chips come with 10 or 12 CPU cores.
+  <p style="margin-bottom:1.2cm"></p>
+  
+- Additionally, graphics processing units (GPUs) are increasingly available for neural network training and other [embarrassingly parallel](https://en.wikipedia.org/wiki/Embarrassingly_parallel) problems.
+
+---
+
+# Initial remarks
+
+<p style="margin-bottom:2.0cm"></p>
+
+- Computation has become increasingly inexpensive in the recent times.
+<p style="margin-bottom:1.0cm"></p>
+
+- Scientific computing has benefited greatly from these advances and many routines and algorithms have incorporated parallelism.
+<p style="margin-bottom:1.0cm"></p>
+
+- It is important to know when/where/if any of these routines are being used within a given R package.
+<p style="margin-bottom:1.0cm"></p>
+
+- This workshop will mainly focus on embarrassingly parallel problems.
+
+---
+
+# Shared vs. distributed memory
+
+<p style="margin-bottom:2.5cm"></p>
+
+
+
+---
+
+
+class: center, middle
+
+## Parallel computing in R
+
+---
+
+
+# Out-of-the-box implementations
+
+Since R v2.14.0, the package `parallel` is part of the base R distribution.
+
+--
+
+`parallel` comes with parallel versions of the family of *apply functions, e.g., apply, lapply, sapply.
+
+--
+
+Example code:
+```{r, eval=FALSE, error=FALSE, results='hide'}
+library(parallel)
+n <- 10; sd <- 2
+# calculate the number of cores
+num_cores <- detectCores() - 1
+# initiate cluster
+cl <- makeCluster(num_cores)
+# run
+parLapply(cl, 2:4, function(mean) rnorm(n,mean,sd))
+# stop cluster
+stopCluster(cl)
+```
+
+--
+What happens when you try the above in your computers?
+
+---
+
+# Initializing the cores
+
+When using the `parallel` package, required information (`n` and `sd`) needs to be passed to all the cores prior to execution.
+
+--
+
+This is achieved as follows:
+```{r, eval=FALSE, error=FALSE}
+library(parallel)
+n <- 10; sd <- 2
+# initiate cluster
+cl <- makeCluster(num_cores)
+{{clusterExport(cl, c("n","sd"))}}
+# run
+parLapply(cl, 2:4, function(mean)rnorm(n,mean,sd))
+# stop cluster
+stopCluster(cl)
+```
+
+--
+In addition of `clusterExport`, `parallel` has additional functions to initialize variables, functions or packages in remote clusters, type `?clusterExport` for more details.
+
+---
+
+
+# Overhead 
+
+Despite what one may think, parallel computing is not always faster, why?
+
+--
+<p style="margin-bottom:0.7cm"></p>
+
+The reason is **overhead**.
+
+--
+
+- This is because by using multiple cores one needs to initialize and pass information among them.
+<p style="margin-bottom:0.7cm"></p>
+--
+
+- This preparation/communication adds some computational burden. 
+<p style="margin-bottom:0.7cm"></p>
+--
+
+- Consequently, the performance increase is highly dependent on the type of application.
+<p style="margin-bottom:0.7cm"></p>
+--
+
+- Typically, fast computations with efficient use of processing power won't benefit as much as more time-consuming applications.
+
+---
+
+# Random number generation
+
+In many instances, we are interested in making our results reproducible, which is usually achieved in the sequential setting by setting up a *seed*.
+
+--
+
+The specific way of setting a seed in parallel implementations is:
+```{r, eval=TRUE}
+library(parallel)
+cl <- makeCluster(4)
+
+clusterSetRNGStream(cl, rep(403,6) )
+res1 <- parLapplyLB(cl,rep(100,3),function(n){
+  rnorm(n,mean=1,sd=2)})
+
+clusterSetRNGStream(cl, rep(403,6) )
+res2 <- parLapplyLB(cl,rep(100,3),function(n){
+  rnorm(n,mean=1,sd=2)})
+
+stopCluster(cl)
+all.equal(res1,res2)
+```
+
+---
+
+
+# A limitation 
+
+<p style="margin-bottom:2.5cm"></p>
+
+- The `parallel` package was designed for usage in shared memory architectures.
+<p style="margin-bottom:0.7cm"></p>
+--
+
+- For distributed memory architectures, package `snow` provides a robust alternative.
+<p style="margin-bottom:0.7cm"></p>
+--
+
+- Interestingly, `snow` works well for either architecture, thus, it is a good idea to stick with it.
+
+---
+
+# `foreach`
+
+<p style="margin-bottom:2.5cm"></p>
+
+- Using the `parallel` package alone can be burdensome
+  - a lot of housekeeping that needs to be done,
+  - i.e., one must keep track of all variables/packages/functions that need to be passed to remote cores.
+
+<p style="margin-bottom:1.2cm"></p>
+
+--
+
+- Luckily, package `foreach` greatly helps to overcome this.
+
+---
+
+# Basic call to `foreach`
+
+<p style="margin-bottom:1.7cm"></p>
+
+```{r, eval=FALSE}
+library(parallel)
+library(doParallel)
+library(foreach)
+
+cl <- makeCluster(num_cores)
+
+registerDoParallel(cl)
+
+res <- foreach(..., # controls the "loop" 
+        .combine, # how the results are put together 
+        # (usually equals c, rbind, cbind)
+        .inorder = TRUE,
+        .errorhandling = c('stop', 'remove', 'pass'),
+        .packages = NULL, 
+        .export = NULL, 
+        .noexport = NULL,
+        .verbose = FALSE) %dopar%{ # can be changed to %do% to run sequantially
+         
+        # do something for a given iteration of the "loop" #
+         
+         }
+stopCluster(cl)
+```
+
+---
+
+# Appeal of `foreach`
+
+<p style="margin-bottom:2.5cm"></p>
+
+- Loop-like interface. 
+<p style="margin-bottom:1.5cm"></p>
+--
+
+- Seamless passing of needed variables, dataframes, functions.
+<p style="margin-bottom:1.5cm"></p>
+--
+
+- One needs to explicitly request packages, however.
+<p style="margin-bottom:1.5cm"></p>
+--
+
+- Flexibility in the way results can be combined/retrieved.
+
+---
+
+# Example: Cross-validation in parallel
+```{r}
+set.seed(12397)
+n <- 10000 # sample size
+
+X <- cbind( x1 = rnorm(n),  # design matrix
+            x2 = rbinom(n = n, size = 1, prob=0.4), 
+            x3 = runif(n))
+X <- model.matrix( ~.^2, data=data.frame(X))
+
+Beta <- rep(0, ncol(X)-1)  
+Beta[c(1,2,4)] <- rnorm(3) 
+Beta <- c(1, Beta) # true values
+
+mu <- as.numeric(gtools::inv.logit(X %*% Beta)) # compute response
+Y <- rbinom(n = n, size = 1, prob = mu)
+
+data.cv <- data.frame(y=Y,X) # put data together
+
+cvfolds <- 5 # number of folds
+
+data.cv$fold <- cut(sample(nrow(data.cv)), # divide data in equally-sized folds
+                    breaks=cvfolds,labels=FALSE)
+```
+
+---
+
+# Cross-validation in parallel (cont'd)
+.pull-left[
+```{r upload dat, paged.print=FALSE, eval=FALSE}
+library(snow)
+library(doSNOW)
+
+num_cores <- 5
+cl <- makeCluster(num_cores)
+registerDoSNOW(cl)
+
+res.cv <- foreach(foldi = 1:cvfolds, 
+                  .combine = 'c', 
+                  .verbose = TRUE) %dopar% {
+    
+    foldindx = data.cv$fold == foldi
+    
+    fit = glm(y ~ .-fold, 
+              data = data.cv[!foldindx,], 
+              family = binomial)
+   
+     data.cv.foldi = data.cv[foldindx,]
+    pred = predict(fit, data.cv.foldi)
+    resi = mean((data.cv.foldi$y-pred)^2)
+    return(resi)
+}
+stopCluster(cl)
+```
+] 
+
+--
+
+.pull-right[
+
+Because `.verbose = TRUE`
+```{r upload dat-out, linewidth=50, ref.label="upload dat", echo=FALSE, message=FALSE}
+```
+
+]
+
+---
+
+# Cross-validation in parallel (cont'd)
+
+<p style="margin-bottom:2.5cm"></p>
+
+What does the previous code return?
+
+--
+
+```{r,eval=TRUE}
+round(res.cv, digits = 3)
+```
+
+
+---
+
+
+# One practical recommendation
+
+<p style="margin-bottom:2.5cm"></p>
+
+Suppose you have a dataframe (or a vector) called "`mydata`" 
+  - this object can be somehow indexed (or split) by variable called `indx`
+  - this index can represent things like a replicate, a centre, etc.
+
+<p style="margin-bottom:1.2cm"></p>
+--
+
+Similar to the cross validation example above, but with a couple differences:
+  - "`mydata`" can get really large.
+  - we are only interested in processing the split version of `mydata`"
+  
+---
+
+# A not-so-great idea
+
+<p style="margin-bottom:2.5cm"></p>
+
+Can you say why?
+```{r, eval=FALSE}
+library(parallel)
+library(doParallel)
+
+cl <- makeCluster(num_cores)
+registerDoParallel(cl)
+
+res <- foreach(indxi = 1:nindx, 
+               .combine = 'c', .verbose=TRUE) %dopar% {
+         
+        datai = mydata[mydata$indx==indxi,]
+        
+        # ... do something with datai only... #
+         
+       }
+stopCluster(cl)
+```
+
+---
+
+# A better idea
+
+<p style="margin-bottom:2.5cm"></p>
+
+Why?
+```{r, eval=FALSE}
+library(parallel)
+library(doParallel)
+library(iterators)
+
+cl <- makeCluster(num_cores)
+registerDoParallel(cl)
+
+res <- foreach(datai = isplit(mydata, list(indxi=mydata$indx)), 
+        .combine = 'c', .verbose=TRUE) %dopar% {
+         
+        # ... do something with datai only... #
+         
+       }
+stopCluster(cl)
+```
+<!-- Above, we have taken advange of the function `isplit` in package `iterators`, which I'm going to introduce in more detail. -->
+
+---
+
+
+# `iterators`
+
+<p style="margin-bottom:2.5cm"></p>
+
+In many cases, it's better to pass only the portion of the data we are dealing with for a given iteration/core.
+
+<p style="margin-bottom:1.2cm"></p>
+--
+
+The `iterators` package helps us to achieve this. 
+  - different types of *iterator functions* available.
+
+---
+
+# `icount`
+
+<p style="margin-bottom:2.5cm"></p>
+
+Performs a sequential count.
+```{r,eval=TRUE}
+cl <- makeCluster(num_cores)
+
+registerDoSNOW(cl)
+clusterSetRNGStream(cl, rep(4039,6) )
+
+res.icount <- foreach(indxi = icount(10),
+          .combine='rbind', 
+          .verbose=FALSE) %dopar% {
+            
+            resi = summary(rnorm(n = 10000, mean = indxi))
+            
+            return(resi)
+          }
+
+stopCluster(cl)
+```
+
+---
+
+# `icount` (cont'd)
+```{r,eval=TRUE}
+round(res.icount, digits = 3)
+```
+Note that if this iterator is run without an argument, i.e. `icount()`, it will keep counting indefinitely. 
+
+---
+
+# `iter`
+This function iterates over a variety of objects, more commonly matrices or dataframes. 
+In particular, it allows to iterate over columns, rows or individual cells.
+```{r,eval=TRUE}
+iters.df <- expand.grid(mean = 0:2, sd = 3:5) 
+                        
+cl <- makeCluster(num_cores)
+registerDoSNOW(cl)
+clusterSetRNGStream(cl, rep(4039,6) )
+
+res.iter <- foreach(iter = iter(iters.df, by='row'),
+               .combine='rbind', 
+               .verbose=FALSE) %dopar% 
+  {
+    mean.iter = iter$mean
+    sd.iter = iter$sd
+    
+    x = rnorm(10000, mean=mean.iter, sd=sd.iter)
+    
+    return( c(summary(x), SD=sd(x)) )
+  }
+stopCluster(cl)
+```
+
+---
+
+# `iter` (cont'd)
+
+<p style="margin-bottom:2.5cm"></p>
+
+```{r,eval=TRUE}
+round(res.iter, digits = 3)
+```
+
+---
+
+
+# `isplit`
+This iterator allows to divide a given vector or dataframe into groups according to a factor or list of factors.
+
+```{r,eval=TRUE}
+x <- rnorm(2000)
+f <- factor(sample(1:10, length(x), replace=TRUE))
+
+cl <- makeCluster(num_cores)
+registerDoSNOW(cl)
+
+res.isplit <- foreach(iter = isplit(x, list(f=f)), 
+               .combine='rbind', 
+               .verbose=FALSE) %dopar% 
+  {
+  factoriter <- iter$key$f
+  xiter <- iter$value
+
+  resi = c(f = as.numeric(factoriter),
+           summary(xiter), 
+           SD=sd(xiter))
+  
+  return(resi)    
+}
+stopCluster(cl)
+```
+
+---
+
+# `isplit` (cont'd)
+
+<p style="margin-bottom:2.5cm"></p>
+
+```{r,eval=TRUE}
+round(res.isplit, digits = 3)
+```
+
+---
+
+# Example: Monte Carlo simulation
+
+<p style="margin-bottom:2.5cm"></p>
+
+- A Monte Carlo simulation is typically performed to understand the behaviour/performance of statistical methods.
+<p style="margin-bottom:1.2cm"></p>
+
+- This type of study is ideal very easy to parallelize as each iteration is commonly independent from one another.
+<p style="margin-bottom:1.2cm"></p>
+
+- Okan Bulut from University of Alberta provides [a great resource](https://okanbulut.github.io/simulations_in_r/) on the topic.  
+
+---
+
+
+# Monte Carlo simulation (cont'd)
+
+.pull-left[
+```{r MCsim1, paged.print=FALSE, eval=FALSE}
+library(foreach); library(doSNOW)
+
+cl <- makeCluster(7); registerDoSNOW(cl)
+
+iterations = 21
+seeds = sample.int(10000, 100)
+source("MCsim_auxiliaryfunctions.R")
+
+system.time(
+  simresults <- foreach(i=1:iterations, 
+      .packages = c("mirt", "irtoys"),
+      .combine = rbind) %do% {#<<
+  # Generate item parameters and data
+  step1 <- generate_data(nitem = 10, 
+            nexaminee = 1000, seed=seeds[i])
+  # Estimate item parameters
+  step2 <- estimate_par(step1$respdata, 
+                        guess = -1)
+  # Summarize results and return them
+  return(summarize(step2, step1$itempar))
+})
+
+stopCluster(cl)
+```
+] 
+
+--
+
+.pull-right[
+```{r MCsim2, paged.print=FALSE, eval=FALSE}
+library(foreach); library(doSNOW)
+
+cl <- makeCluster(7); registerDoSNOW(cl)
+
+iterations = 21
+seeds = sample.int(10000, 100)
+source("MCsim_auxiliaryfunctions.R")
+
+system.time(
+  simresults <- foreach(i=1:iterations, 
+      .packages = c("mirt", "irtoys"),
+      .combine = rbind) %dopar% {#<<
+  # Generate item parameters and data
+  step1 <- generate_data(nitem = 10, 
+            nexaminee = 1000, seed=seeds[i])
+  # Estimate item parameters
+  step2 <- estimate_par(step1$respdata, 
+                        guess = -1)
+  # Summarize results and return them
+  return(summarize(step2, step1$itempar))
+})
+
+stopCluster(cl)
+```
+]
+
+
+---
+
+# Monte Carlo simulation (cont'd)
+
+Timings:
+
+.pull-left[
+
+Sequential
+```{r MCsim1 out, linewidth=50, ref.label="MCsim1", echo=FALSE, message=FALSE}
+```
+
+]
+
+.pull-right[
+Parallel
+```{r MCsim2, linewidth=50, ref.label="MCsim2", echo=FALSE, message=FALSE}
+```
+]
+
+---
+
+class: center, middle
+
+## High Performance Computing (HPC)
+
+---
+
+
+# What is HPC? - Expectation
+
+<p style="margin-bottom:2.5cm"></p>
+
+
+---
+
+
+# What is HPC? - Reality
+
+---
+
+
+# HPC - in short
+
+.left-code1[
+Practice of aggregating computing power (measured in FLOPS)
+<p style="margin-bottom:-0.2cm"></p>
+
+Achieved by **clustering** many smaller computers and processors
+<p style="margin-bottom:-0.5cm"></p>
+
+  - Each of these computers is called a 'node'
+  - Nodes communicate using a dedicated (very fast) network
+<p style="margin-bottom:-0.2cm"></p>
+
+Deliver higher performance than a typical workstation
+<p style="margin-bottom:-0.2cm"></p>
+
+Aims to solve large problems in science, engineering, or business
+]
+
+.right-plot1[
+<p style="margin-bottom:2.5cm"></p>
+
+]
+
+---
+
+# HPC - some applications
+
+.pull-left[
+<p style="margin-bottom:2.5cm"></p>
+
+- Quantum mechanics
+<p style="margin-bottom:1cm"></p>
+
+- Weather forecasting
+<p style="margin-bottom:1cm"></p>
+
+- Molecular modelling
+<p style="margin-bottom:1cm"></p>
+
+- Astrophysics
+
+]
+
+--
+.pull-right[
+<p style="margin-bottom:2.0cm"></p>
+
+]
+
+---
+
+# Why using HPC?
+
+--
+.pull-left[
+
+**Pros:**
+
+- Reduce computational time
+<p style="margin-bottom:0.3cm"></p>
+  
+- Increase CPU capacity 
+  <!-- - Model resolution -->
+  <!-- - Number of scenarios -->
+<p style="margin-bottom:0.3cm"></p>
+  
+- Increase memory and/or storage
+  <!-- - Aggregate larger data  -->
+  <!-- - Solve bigger problems -->
+<p style="margin-bottom:0.3cm"></p>
+  
+- Tackle otherwise unfeasible projects
+  
+<!-- “Two aspects of our work that would have been impossible without supercomputers: the direct simulations that first produce the plasma dynamics near a black hole and subsequently the appearance of the “shadow” from a black hole, and the data reduction needed to turn the huge amount of interferometric data from the radiotelescopes into an image,” explains Rezzolla. -->
+  
+]
+--
+.pull-right[
+
+  **Cons:**
+
+  - A relatively steep learning curve
+  <p style="margin-bottom:0.5cm"></p>
+  
+  - Largely DIY 
+  <p style="margin-bottom:0.5cm"></p>
+  
+  - Shared systems $\rightarrow$ Planning needed 
+  <p style="margin-bottom:0.5cm"></p>
+  
+
+]
+
+---
+
+# Getting started - SSH
+
+Secure SHell Protocol
+
+- cryptographic network protocol for operating network services securely over an unsecured network
+
+Windows:
+
+- [MobaXterm](https://mobaxterm.mobatek.net/)
+<p style="margin-bottom:0.3cm"></p>
+
+- [PuTTY](https://www.putty.org/)
+
+<p style="margin-bottom:0.3cm"></p>
+
+MacOS/Linux
+
+- Terminal 
+
+---
+
+# Getting started - login
+
+<p style="margin-bottom:2.7cm"></p>
+
+- Clusters can be accessed over the internet/local network
+<p style="margin-bottom:1.2cm"></p>
+
+- `ssh username@hostname`
+<p style="margin-bottom:1.2cm"></p>
+
+-  Other common options: `ssh -Y ...` or `ssh -X ...`
+<p style="margin-bottom:1.2cm"></p>
+
+- `man ssh` for many more options
+
+---
+
+# Getting started - basic environment
+
+<p style="margin-bottom:2.3cm"></p>
+
+
+---
+
+# Shell scripting
+
+<p style="margin-bottom:2.5cm"></p>
+
+- This is the most widely used interface in HPC.
+<p style="margin-bottom:1.0cm"></p>
+
+- For the most part one gets by with basic commands:
+<p style="margin-bottom:-0.5cm"></p>
+  - `ls`, `cd`, `mv`, `cp`, `pwd`
+  
+<p style="margin-bottom:1.0cm"></p>
+
+- Shell scripting intros/tutorials:
+  - [shellscript.sh](https://www.shellscript.sh/)
+  - [The Unix shell](https://v4.software-carpentry.org/shell/index.html)
+  - [Intro to the Linux shell](https://education.scinet.utoronto.ca/enrol/index.php?id=1004) (account needed) 
+
+---
+
+
+
+# Job schedulling
+
+<p style="margin-bottom:2.5cm"></p>
+
+- Login nodes are not designed to carry out large computations.
+<p style="margin-bottom:1.0cm"></p>
+
+- As a shared resource, fair use is encouraged/enforced.
+<p style="margin-bottom:1.0cm"></p>
+
+- Multiple schedulling tools available:
+  - **`Slurm`**
+  - `PBS/Torque`
+  - `SGE`
+  - `LSF`
+  - Different syntax similar purpose ([rosetta stone of workload managers](https://slurm.schedmd.com/rosetta.pdf))
+
+---
+
+# Job schedulling - in a nutshell
+
+<p style="margin-bottom:2.3cm"></p>
+
+- A tool that tells the HPC system what to run, for how long, and how much resources it will need - At all times, for all users.
+<p style="margin-bottom:0.7cm"></p>
+
+- A job scheduler performs the following tasks:
+  - Assigns users' jobs to compute nodes.
+<!-- This access can be non-exclusive, with shared resources, or exclusive, with resources limited to a single user -->
+  
+  - Provides a framework for initiating, performing, and monitoring work on the assigned nodes.
+  <!-- Work is typically managed as parallel jobs run on multiple nodes -->
+  
+  - Manages the queue of pending work and determines which job will be assigned to the node next.
+
+---
+
+# Job schedulling - slurm
+<!-- Taken from: https://www.run.ai/guides/slurm/slurm-vs-lsf-vs-kubernetes-scheduler-which-is-right-for-you/ -->
+.left-code[
+<!-- This slide has two columns. -->
+  Basic commands:
+<p style="margin-bottom:0.5cm"></p>
+  
+  - `sbatch`
+  - `squeue`
+  - `scancel`
+  - `srun`
+  - `salloc`
+  
+<p style="margin-bottom:2.5cm"></p>
+[Slurm documentation](https://slurm.schedmd.com/)
+]
+
+.right-plot[
+  
+]
+
+
+
+---
+
+# Job schedulling - a simple example (1)
+
+The following lines constitute a file called `firstjob.sh`
+```{bash, eval=FALSE, results='show'}  
+#!/bin/bash 
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=40
+#SBATCH --time=1:00:00
+#SBATCH --job-name=Myfirstjob
+#SBATCH --output=job_output_%j.out
+ 
+cd $SLURM_SUBMIT_DIR
+ 
+# ... do something in this job using 80 = 40*2 tasks/cores ...  #
+```
+Submit the job as
+```{bash, eval=FALSE, results='show'}  
+login-node:$ sbatch firstjob.sh
+```
+
+---
+
+# Job schedulling - a simple example (2)
+
+Alternatively, we can do the following:
+
+File `secondjob.sh`
+```{bash, eval=FALSE, results='show'}  
+#!/bin/bash 
+
+cd $SLURM_SUBMIT_DIR
+ 
+# ... do something in this job using 80 = 40*2 tasks/cores ...  #
+```
+Submit the job as
+```{bash, eval=FALSE, results='show'}  
+login-node:$ sbatch -N 2 -ntasks-per-node=40 -t 1:00:00 \
+                  -J Mysecondjob -o job_output_%j.out secondjob.sh
+```
+
+---
+
+# Job schedulling - a simple example (3)
+
+If successful, the system will show something like:
+
+```{bash, eval=FALSE, results='show'}  
+login-node:$ sbatch ... secondjob.sh
+Submitted batch job 34987
+```
+where `34987` is the job id. (Or give an error otherwise)
+
+Common errors that may make the job submission fail:
+
+- The bash script is not executable. (solution: `chmod 700 firstjob.sh`)
+
+- The script is launched from a read-only path. (solution `cd /writable/path`)
+
+- Requesting resources inappropriately, e.g.,  walltime, memory, cores.
+
+---
+
+# Job schedulling - partitions
+
+<p style="margin-bottom:2.5cm"></p>
+
+Some systems configure different 'queues' or 'partitions'.
+<p style="margin-bottom:1.0cm"></p>
+
+These are set with option `-p` or `--partition`.
+<p style="margin-bottom:1.0cm"></p>
+
+Potential differences among partitions: 
+<p style="margin-bottom:-0.3cm"></p>
+
+- hardware characteristics
+<p style="margin-bottom:-0.3cm"></p>
+
+- walltime
+<p style="margin-bottom:-0.3cm"></p>
+
+- memory available
+<p style="margin-bottom:-0.3cm"></p>
+
+- number of cores per node
+
+---
+
+# Job monitoring 
+
+- `squeue` to show the job queue (`squeue --me` for just your jobs.)
+
+- `squeue -j JOBID` information on a specific job (alternatively, `scontrol show job JOBID`, which is more verbose.)
+
+- `squeue --start -j JOBID` estimate for when a job will run.
+
+- `scancel -i JOBID` cancel the job.
+
+- `scancel -u USERID` cancel all your jobs.
+
+- `sinfo -p partition` look at available nodes in `partition`.
+
+- `sacct` info on your recent jobs.
+
+---
+
+# Software in HPC 
+
+<p style="margin-bottom:2.5cm"></p>
+
+- Given the wide range of users and applications different software is needed.
+<p style="margin-bottom:1.2cm"></p>
+
+- Robust software management is necessary.
+<p style="margin-bottom:1.2cm"></p>
+
+- Tools like [`lmod`](https://lmod.readthedocs.io/en/latest/index.html#) come to our help.
+
+
+---
+
+# Software in HPC - module loading
+
+<p style="margin-bottom:2.5cm"></p>
+
+- Usually, multiple software is installed, all is made available via `module` commands.
+<p style="margin-bottom:1cm"></p>
+
+- `module` sets appropriate environment variables (`PATH`, etc.)
+<p style="margin-bottom:1cm"></p>
+
+- `module` takes care of conflicting versions of a given software to be available.
+<p style="margin-bottom:1cm"></p>
+
+- _relevant for reproducibility purposes_
+
+---
+
+
+# Software in HPC - useful commands
+
+<p style="margin-bottom:2.0cm"></p>
+
+- `module load <module-name>`: use particular software.
+<p style="margin-bottom:1cm"></p>
+
+- `module purge`: remove currently loaded modules.
+<p style="margin-bottom:1cm"></p>
+
+- `module spider` (or `module spider <module-name>`): list available software packages
+<p style="margin-bottom:1cm"></p>
+
+- `module avail`: list loadable software packages that require
+no other modules to be loaded first.
+<p style="margin-bottom:1cm"></p>
+
+- `module list`: list loaded modules.
+
+---
+
+# Software in HPC - available software 
+
+Example from SciNet's Niagara Supercomputer:
+```{bash, eval=FALSE, results='show'}  
+login-node:$ module spider
+-------------------------------------------------------------------
+The following is a list of the modules and extensions 
+currently available:
+-------------------------------------------------------------------
+CCEnv: CCEnv
+  Compute Canada software modules. Must be loaded to see 
+  Compute Canada modules in 'module spider'.
+
+NiaEnv: NiaEnv/2018a, NiaEnv/2019b
+  Software modules for Niagara. Must be loaded to see 
+  Niagara modules in 'module spider' (loaded by default).
+
+antlr: antlr/2.7.7
+  ANTLR, ANother Tool for Language Recognition, ...
+  
+...
+
+```
+
+---
+
+
+# Software in HPC - loading details (1)
+
+```{bash, eval=FALSE, results='show'}  
+login-node:$ module spider r
+--------------------------------------------------------------------
+  r:
+--------------------------------------------------------------------
+Description:
+  R is a language and environment for statistical computing 
+  and graphics 
+Versions:
+        r/3.5.3
+        ...
+        r/4.1.2
+Other possible modules matches:
+    .singularity  antlr  arm-forge  ...
+--------------------------------------------------------------------
+To find other possible module matches execute:
+      $ module -r spider '.*r.*'
+--------------------------------------------------------------------
+For detailed information about a specific "r" package 
+(including how to load the modules) use the module full name ...
+
+For example:
+     $ module spider r/4.1.2
+--------------------------------------------------------------------
+```
+
+---
+
+# Software in HPC - loading details (2)
+
+```{bash, eval=FALSE, results='show'}  
+login-node:$ module load r/4.1.2
+
+Lmod has detected the following error:  
+
+These module(s) or extension(s) exist but cannot be 
+loaded as requested: "r/4.1.2"
+
+   Try: "module spider r/4.1.2" to see how to load the module(s).
+```
+
+---
+
+# Software in HPC - loading details (3)
+
+```{bash, eval=FALSE, results='show'}  
+login-node:$ module spider r/4.1.2
+--------------------------------------------------------------------
+  r: r/4.1.2
+--------------------------------------------------------------------
+Description:
+  R is a language and environment for statistical computing 
+  and graphics 
+
+  You will need to load all module(s) on any one of the lines 
+  below before the "r/4.1.2" module is available to load.
+
+      gcc/8.3.0
+      intel/2019u4
+ 
+  Help:
+    R is 'GNU S', a freely available language and environment 
+    for statistical computing and graphics which provides a wide 
+    variety of statistical and graphical techniques: linear and 
+    nonlinear modelling, statistical tests, time series analysis, 
+    classification, clustering, etc. Please consult the R project 
+    homepage for further information.
+      
+    Homepage: https://www.r-project.org
+```
+
+---
+
+
+# Software in HPC - loading details (4)
+
+```{bash, eval=FALSE, results='show'}  
+login-node:$ module load intel/2019u4 r/4.1.2
+login-node:$ R
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> 
+```
+
+---
+
+
+# Installing packages
+
+<p style="margin-bottom:2.5cm"></p>
+
+- For the most part library/package installation works as in any workstation.
+  - i.e., `install.packages(...)` in `R`
+  
+<p style="margin-bottom:1cm"></p>
+
+- There are some exceptions:
+  - clusters often have no internet access (usually, only `login` nodes can reach the www.)
+<p style="margin-bottom:1cm"></p>
+  
+  - installation requires special dependencies.
+
+---
+
+# Installing packages - Special dependencies
+
+One example: install `data.table` package with OpenMP support.
+
+```{bash, eval=FALSE, results='show'}  
+login-node:$ ml NiaEnv/2019b ml gcc/8.3.0 openmpi/3.1.3 r/4.1.2
+login-node:$ R
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+....
+
+> install.packages("data.table", 
+  configure.args = c(paste0("--with-data.table-include=",
+  Sys.getenv("SCINET_OPENMPI_ROOT"),"/include"),
+  paste0("--with-data.table-libpath=",
+  Sys.getenv("SCINET_OPENMPI_ROOT"),"/lib")))
+...
+DONE (data.table)
+
+> library(data.table)
+data.table 1.14.2 using 20 threads (see ?getDTthreads). 
+Latest news: r-datatable.com
+```
+
+---
+
+# Data creation
+
+General guidelines for (efficient) data creation in HPC:
+<p style="margin-bottom:0.5cm"></p>
+
+- File I/O (Input/Output) is slow! Avoid it as much as you can!
+(CPU operations $\approx$ 1 ns, disk access times $\approx$ 5 ms.)
+
+- Do not create lots of little files! They are an inefficient use of space and time (slow to create.)
+
+- Instead, save your data in big files which contain all the information you need.
+
+- Do not have multiple processes writing to files in the same directory (unless you're using parallel I/O.)
+<!-- A process will "lock" the directory after it's done writing the file and updating the file metadata. The other processes will have to sit and wait while this is being done. -->
+
+- Write data out in binary. Faster and takes less space.
+
+---
+
+
+# Data management
+
+How to organize files on disk?
+<p style="margin-bottom:-0.5cm"></p>
+
+- Human-interpretable filenames lose their charm after a few dozen files (or after a few months pass.)
+<p style="margin-bottom:-0.3cm"></p>
+
+- Don't use filenames to store run information.
+<p style="margin-bottom:-0.3cm"></p>
+
+- Avoid using a flat directory structure (i.e., no sub-directories). Organize your data in a sensible directory tree.
+<p style="margin-bottom:-0.3cm"></p>
+
+- If you're doing many runs with many varied parameters, consider using a database to store the filenames of your runs, with associated run metadata.
+<p style="margin-bottom:-0.3cm"></p>
+
+- Rigorously maintained meta-data (data about the data) is essential.
+<p style="margin-bottom:-0.3cm"></p>
+
+- Back up your data, especially your metadata or database.
+
+---
+
+
+# Take-home messages
+
+<p style="margin-bottom:2.0cm"></p>
+
+- Take advantage of available computing power.
+<p style="margin-bottom:1.1cm"></p>
+
+- Be mindful of what you are passing to the cores, this can greatly impact performance.
+<p style="margin-bottom:1.1cm"></p>
+
+- HPC can greatly accelerate your work.
+<p style="margin-bottom:1.1cm"></p>
+
+- Understanding how to operate HPC systems is crucial.
+<p style="margin-bottom:1.1cm"></p>
+
+- Make full and efficient use of available resources.
+
+---
+
+
+# Resources and Acknowledgements
+
+.pull-left[
+- [Intro to parallel computing in R](https://nceas.github.io/oss-lessons/parallel-computing-in-r/parallel-computing-in-r.html)
+
+- [`foreach` vignette](https://cran.r-project.org/web/packages/foreach/vignettes/foreach.html)
+
+- [A guide to parallelism in R](https://privefl.github.io/blog/a-guide-to-parallelism-in-r/)
+
+- [Introduction to Shell and Cluster computing](https://hbctraining.github.io/Intro-to-shell-flipped/schedule/links-to-lessons.html)
+
+- [Digital Research Alliance of Canada](https://alliancecan.ca/en) 
+
+- [Getting started with DRACan](https://docs.alliancecan.ca/wiki/Getting_started)
+
+]
+
+.pull-right[
+- Some slides thanks to the SciNet team:
+  - [Introduction to SciNet, Niagara & Mist](https://education.scinet.utoronto.ca/course/view.php?id=1198) by Mike Nolta (Dec 2021)
+  - [Storage and I/O in Large Scale Scientific Projects](https://support.scinet.utoronto.ca/education/go.php/265/file_storage/index.php/download/1/files[]/7370/) by Ramses van Zon and Marcelo Ponce (Sep 2016)
+
+]
+
+---
+
+class: center, middle
+
+# Thank you for your attention!
+**Email: oespinga@uwo.ca**
+
