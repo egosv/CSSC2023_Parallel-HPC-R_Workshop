@@ -1,2 +1,3 @@
-# CSSC2023_Parallel-HPC-R_Workshop
-Materials for workshop presented at the Canadian Statistics Student Conference 2023
+# A primer to parallel and high-performance computing in R
+
+Materials for workshop presented at the Canadian Statistics Student Conference 2023 at Carleton University, Ottawa on May 27, 2023.
